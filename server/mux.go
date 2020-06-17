@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"html/template"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"path"
@@ -105,6 +106,8 @@ func NewMux(
 		router.Handle("/res/*", static(baseURL+"/res", packr.NewBox("../res")))
 		router.Post("/call", withGauge(prometheusCallJoinTotal, mux.routeNewCall))
 		router.Get("/call/{callID}", withGauge(prometheusCallViewsTotal, renderer.Render(mux.routeCall)))
+		router.Post("/api/call", mux.apiNewCall)
+		router.Get("/api/call/{callID}", mux.apiJoinCall)
 		router.Get("/manifest.json", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.Write(manifest)
@@ -182,4 +185,46 @@ func (mux *Mux) routeCall(w http.ResponseWriter, r *http.Request) (string, inter
 		"Version":    mux.version,
 	}
 	return "call.html", data, nil
+}
+
+func (mux *Mux) apiNewCall(w http.ResponseWriter, r *http.Request) {
+
+	type NewCall struct {
+		callId string
+	}
+
+	callID := NewUUIDBase62()
+  newCall := NewCall{}
+	body, _ := ioutil.ReadAll(r.Body)
+  //println(body)
+	error := json.Unmarshal(body, &newCall)
+	if error != nil {
+	} else {
+    println(newCall.callId)
+		callID = newCall.callId
+	}
+	data := map[string]interface{}{
+    "callId":     callID,
+  }
+	w.Header().Set("Content-Type", "application/json")
+	response, _ := json.Marshal(data)
+	w.Write(response)
+}
+
+func (mux *Mux) apiJoinCall(w http.ResponseWriter, r *http.Request) {
+	callID := url.PathEscape(path.Base(r.URL.Path))
+	userID := NewUUIDBase62()
+
+	iceServers := GetICEAuthServers(mux.iceServers)
+
+	data := map[string]interface{}{
+		"callId":     callID,
+		"userId":     userID,
+		"iceServers": iceServers,
+		"network":    mux.network.Type,
+		"version":    mux.version,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	response, _ := json.Marshal(data)
+	w.Write(response)
 }
